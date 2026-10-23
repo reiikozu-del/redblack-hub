@@ -1,8 +1,10 @@
--- language: Luau, file: core.lua, target: GitHub Raw (Updated with CFrame Speed Bypass)
+-- language: Luau, file: core.lua, target: GitHub Raw (Full Features + Mobile Tap TP & Spectate)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
@@ -11,12 +13,17 @@ local camera = Workspace.CurrentCamera
 -- State
 local noclip, infJump, wsVal = false, false, 16
 local cfSpeedActive = false
-local cfSpeedVal = 1 -- Skala kecepatan CFrame (0.5 - 2.0 untuk angka aman)
+local cfSpeedVal = 1
 local instantPromptActive = false
 local savedCFrame = nil
 local espActive = false
 local flyActive = false
 local flySpeed = 50
+local antiAfkActive = false
+local fullbrightActive = false
+local tapTpActive = false
+local isSpectating = false
+local originalCameraSubject = nil
 
 -- UI Factory helper
 local function make(class, props, parent)
@@ -112,29 +119,7 @@ for i, name in ipairs(tabs) do
     end)
 end
 
--- Profile Features
-local pPanel = contents["Profile"]
-
-local wsC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, pPanel)
-make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "WalkSpeed", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, wsC)
-local wsBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "16", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, wsC)
-make("UICorner", {CornerRadius = UDim.new(0, 4)}, wsBox)
-
-wsBox.FocusLost:Connect(function(e)
-    if e then wsVal = tonumber(wsBox.Text) or 16 end
-end)
-
--- CFrame Speed Multiplier Box
-local cfC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, pPanel)
-make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "CFrame Speed (0.5-2)", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, cfC)
-local cfBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "1", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, cfC)
-make("UICorner", {CornerRadius = UDim.new(0, 4)}, cfBox)
-
-cfBox.FocusLost:Connect(function(e)
-    if e then cfSpeedVal = tonumber(cfBox.Text) or 1 end
-end)
-
--- Toggle Generator
+-- Helper UI Components
 local function makeToggle(parentPanel, text, callback)
     local btn = make("TextButton", {
         Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 22),
@@ -152,11 +137,41 @@ local function makeToggle(parentPanel, text, callback)
     end)
 end
 
+local function makeButton(parentPanel, text, callback)
+    local btn = make("TextButton", {
+        Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 22),
+        Font = Enum.Font.GothamMedium, Text = text, TextColor3 = Color3.fromRGB(200, 200, 200), TextSize = 13
+    }, parentPanel)
+    make("UICorner", {CornerRadius = UDim.new(0, 4)}, btn)
+    btn.MouseButton1Click:Connect(callback)
+end
+
+-- Profile Features
+local pPanel = contents["Profile"]
+
+local wsC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, pPanel)
+make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "WalkSpeed", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, wsC)
+local wsBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "16", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, wsC)
+make("UICorner", {CornerRadius = UDim.new(0, 4)}, wsBox)
+
+wsBox.FocusLost:Connect(function(e)
+    if e then wsVal = tonumber(wsBox.Text) or 16 end
+end)
+
+local cfC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, pPanel)
+make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "CFrame Speed (0.5-2)", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, cfC)
+local cfBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "1", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, cfC)
+make("UICorner", {CornerRadius = UDim.new(0, 4)}, cfBox)
+
+cfBox.FocusLost:Connect(function(e)
+    if e then cfSpeedVal = tonumber(cfBox.Text) or 1 end
+end)
+
 makeToggle(pPanel, "CFrame Speed Bypass", function(s) cfSpeedActive = s end)
 makeToggle(pPanel, "NoClip", function(s) noclip = s end)
 makeToggle(pPanel, "Infinite Jump", function(s) infJump = s end)
 
--- Menu Features (Instant Prompt & Waypoint Teleport)
+-- Menu Features (Instant Prompt, Waypoint, Tap TP, Spectate)
 local mPanel = contents["Menu"]
 
 makeToggle(mPanel, "Instant Prompt", function(s)
@@ -173,23 +188,23 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-Workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("ProximityPrompt") then
-        obj:SetAttribute("OriginalHoldDuration", obj.HoldDuration)
-        if instantPromptActive then
-            obj.HoldDuration = 0
+makeToggle(mPanel, "Tap TP (Mobile Friendly)", function(s)
+    tapTpActive = s
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if tapTpActive and not gameProcessed then
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mouse = player:GetMouse()
+            if mouse and mouse.Hit then
+                local char = player.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    char.HumanoidRootPart.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+                end
+            end
         end
     end
 end)
-
-local function makeButton(parentPanel, text, callback)
-    local btn = make("TextButton", {
-        Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(22, 22, 22),
-        Font = Enum.Font.GothamMedium, Text = text, TextColor3 = Color3.fromRGB(200, 200, 200), TextSize = 13
-    }, parentPanel)
-    make("UICorner", {CornerRadius = UDim.new(0, 4)}, btn)
-    btn.MouseButton1Click:Connect(callback)
-end
 
 makeButton(mPanel, "Save Position", function()
     local char = player.Character
@@ -209,7 +224,46 @@ end
 makeButton(mPanel, "Teleport Back", teleportBack)
 floatBackBtn.MouseButton1Click:Connect(teleportBack)
 
--- Misc Features (ESP & Fly)
+-- Player Teleport & Spectate Section
+local tpBox = make("TextBox", {
+    Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+    Font = Enum.Font.GothamMedium, Text = "", PlaceholderText = "Ketik Nama Player...",
+    TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13
+}, mPanel)
+make("UICorner", {CornerRadius = UDim.new(0, 4)}, tpBox)
+
+makeButton(mPanel, "Teleport Ke Player", function()
+    local targetName = string.lower(tpBox.Text)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and (string.find(string.lower(p.Name), targetName) or string.find(string.lower(p.DisplayName), targetName)) then
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                player.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame
+                break
+            end
+        end
+    end
+end)
+
+makeButton(mPanel, "Spectate / Tonton Player", function()
+    local targetName = string.lower(tpBox.Text)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and (string.find(string.lower(p.Name), targetName) or string.find(string.lower(p.DisplayName), targetName)) then
+            if p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+                if not isSpectating then
+                    originalCameraSubject = camera.CameraSubject
+                    camera.CameraSubject = p.Character:FindFirstChildOfClass("Humanoid")
+                    isSpectating = true
+                else
+                    camera.CameraSubject = originalCameraSubject or player.Character:FindFirstChildOfClass("Humanoid")
+                    isSpectating = false
+                end
+                break
+            end
+        end
+    end
+end)
+
+-- Misc Features (ESP, Fly, Fullbright, FOV)
 local miscPanel = contents["Misc"]
 
 makeToggle(miscPanel, "Player ESP", function(s)
@@ -236,14 +290,6 @@ makeToggle(miscPanel, "Player ESP", function(s)
         end
     end
     for _, p in ipairs(Players:GetPlayers()) do applyEsp(p) end
-    if not espActive then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character then
-                local hl = p.Character:FindFirstChild("HubHighlight")
-                if hl then hl:Destroy() end
-            end
-        end
-    end
 end)
 
 makeToggle(miscPanel, "Fly Mode", function(s)
@@ -266,6 +312,53 @@ makeToggle(miscPanel, "Fly Mode", function(s)
     else
         if hrp:FindFirstChild("HubFlyVel") then hrp.HubFlyVel:Destroy() end
         if hrp:FindFirstChild("HubFlyGyro") then hrp.HubFlyGyro:Destroy() end
+    end
+end)
+
+makeToggle(miscPanel, "Fullbright", function(s)
+    fullbrightActive = s
+    if fullbrightActive then
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
+        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        Lighting.Brightness = 1
+        Lighting.GlobalShadows = true
+    end
+end)
+
+local fovC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, miscPanel)
+make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "Field of View (FOV)", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, fovC)
+local fovBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "70", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, fovC)
+make("UICorner", {CornerRadius = UDim.new(0, 4)}, fovBox)
+
+fovBox.FocusLost:Connect(function(e)
+    if e then
+        local val = tonumber(fovBox.Text) or 70
+        camera.FieldOfView = math.clamp(val, 30, 120)
+    end
+end)
+
+-- Server Hop Tab
+local shPanel = contents["Server Hop"]
+makeButton(shPanel, "Rejoin Same Server", function()
+    TeleportService:Teleport(game.PlaceId, player)
+end)
+
+-- Setting Tab (Anti-AFK)
+local setPanel = contents["Setting"]
+makeToggle(setPanel, "Anti-AFK (Prevent Kick)", function(s)
+    antiAfkActive = s
+end)
+
+player.Idled:Connect(function()
+    if antiAfkActive then
+        local VirtualUser = game:GetService("VirtualUser")
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.zero)
     end
 end)
 
@@ -299,7 +392,6 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Loop CFrame Speed Bypass
 RunService.RenderStepped:Connect(function(delta)
     local char = player.Character
     if cfSpeedActive and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
@@ -319,7 +411,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- Dragging UI & Buttons
+-- Dragging UI
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
