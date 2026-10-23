@@ -1,4 +1,4 @@
--- language: Luau, file: core.lua, target: GitHub Raw (Updated Instant Prompt)
+-- language: Luau, file: core.lua, target: GitHub Raw (Updated with CFrame Speed Bypass)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -10,6 +10,8 @@ local camera = Workspace.CurrentCamera
 
 -- State
 local noclip, infJump, wsVal = false, false, 16
+local cfSpeedActive = false
+local cfSpeedVal = 1 -- Skala kecepatan CFrame (0.5 - 2.0 untuk angka aman)
 local instantPromptActive = false
 local savedCFrame = nil
 local espActive = false
@@ -122,6 +124,16 @@ wsBox.FocusLost:Connect(function(e)
     if e then wsVal = tonumber(wsBox.Text) or 16 end
 end)
 
+-- CFrame Speed Multiplier Box
+local cfC = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, pPanel)
+make("TextLabel", {Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "CFrame Speed (0.5-2)", TextColor3 = Color3.fromRGB(220, 220, 220), TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left}, cfC)
+local cfBox = make("TextBox", {Size = UDim2.new(0.35, 0, 0.8, 0), Position = UDim2.new(0.65, 0, 0.1, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), Font = Enum.Font.GothamMedium, Text = "1", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 13}, cfC)
+make("UICorner", {CornerRadius = UDim.new(0, 4)}, cfBox)
+
+cfBox.FocusLost:Connect(function(e)
+    if e then cfSpeedVal = tonumber(cfBox.Text) or 1 end
+end)
+
 -- Toggle Generator
 local function makeToggle(parentPanel, text, callback)
     local btn = make("TextButton", {
@@ -140,6 +152,7 @@ local function makeToggle(parentPanel, text, callback)
     end)
 end
 
+makeToggle(pPanel, "CFrame Speed Bypass", function(s) cfSpeedActive = s end)
 makeToggle(pPanel, "NoClip", function(s) noclip = s end)
 makeToggle(pPanel, "Infinite Jump", function(s) infJump = s end)
 
@@ -282,6 +295,19 @@ RunService.Stepped:Connect(function()
                     bv.Velocity = Vector3.zero
                 end
             end
+        end
+    end
+end)
+
+-- Loop CFrame Speed Bypass
+RunService.RenderStepped:Connect(function(delta)
+    local char = player.Character
+    if cfSpeedActive and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        
+        if hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * cfSpeedVal)
         end
     end
 end)
