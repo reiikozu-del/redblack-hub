@@ -1,4 +1,4 @@
--- language: Luau, file: core.lua, target: GitHub Raw
+-- language: Luau, file: core.lua, target: GitHub Raw (Updated Instant Prompt)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -148,9 +148,14 @@ local mPanel = contents["Menu"]
 
 makeToggle(mPanel, "Instant Prompt", function(s)
     instantPromptActive = s
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            obj.HoldDuration = instantPromptActive and 0 or (obj:GetAttribute("OriginalHoldDuration") or obj.HoldDuration)
+end)
+
+RunService.Heartbeat:Connect(function()
+    if instantPromptActive then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                obj.HoldDuration = 0
+            end
         end
     end
 end)
